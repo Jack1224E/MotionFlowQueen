@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+vis_output/
+validation_output/
+*.png
+*.jpg
+.DS_Store
+.directory
