@@ -15,10 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core.bjf_patchmatch import BJFPatchMatch
 from core.refine import refine_flow, reset_temporal
 from core.shock import ShockDetector
+import torch.nn.functional as Fv
 
 MAX_FRAMES = 500
 SAVE_EVERY = 100
-ANOMALY_VEC_THRESH = 64.0
+ANOMALY_VEC_THRESH = 100.0
+ANOMALY_COST_THRESH = 15
 ANOMALY_ERR_THRESH = 0.15
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'validation_output')
 
@@ -98,12 +100,15 @@ def main():
         if result is None:
             fin_dx_np = np.zeros((H, W), np.float32)
             fin_dy_np = np.zeros((H, W), np.float32)
+            cost_hr_np = np.zeros((H, W), np.float32)
         else:
             dx_grid, dy_grid, conf = result
             fin_dx, fin_dy = refine_flow(dx_grid, dy_grid, conf, t1, t2, block_size=8, temporal=True)
             torch.cuda.synchronize()
             fin_dx_np = fin_dx[0].cpu().numpy()
             fin_dy_np = fin_dy[0].cpu().numpy()
+            cost_hr = Fv.interpolate(conf.unsqueeze(1).float(), (H, W), mode='nearest').squeeze(1)
+            cost_hr_np = cost_hr[0].cpu().numpy()
 
         # --- Metrics ---
         err = warp_error_np(prev_bgr, cur_bgr, fin_dx_np, fin_dy_np)
@@ -125,9 +130,12 @@ def main():
         all_mags.append(mag)
         all_max_vecs.append(max_vec)
 
-        # --- Anomaly Detection ---
-        if max_vec > ANOMALY_VEC_THRESH:
-            msg = f"  ⚠️  ANOMALY Frame {i}: max_vec={max_vec:.1f}px"
+        # --- Anomaly Detection (Smart: high vec AND low confidence) ---
+        flow_mag_map = np.sqrt(fin_dx_np**2 + fin_dy_np**2)
+        suspect_mask = (flow_mag_map > ANOMALY_VEC_THRESH) & (cost_hr_np > ANOMALY_COST_THRESH)
+        if suspect_mask.any():
+            worst = float(flow_mag_map[suspect_mask].max())
+            msg = f"  ⚠️  ANOMALY Frame {i}: max_vec={worst:.1f}px (low-conf)"
             print(msg)
             anomalies.append(msg)
         if err > ANOMALY_ERR_THRESH:

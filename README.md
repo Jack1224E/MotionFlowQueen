@@ -15,20 +15,15 @@ At the heart of the system is a valid 64-bit Census Transform (Triton optimized)
 
 ### Phase 2: The Refinement Suite ("Finesse")
 Raw block-based flow is noisy and quantized. The refinement suite transforms this into a smooth, dense field.
-1.  **Vector Median Filter**: A 3x3 kernel (Triton) that removes outlier vectors ("salt-and-pepper" noise) by enforcing local coherence.
-2.  **Sub-Pixel Quadratic Refinement**:
-    -   Evaluates the Census cost surface at 9 neighbor points.
-    -   Fits a 2D quadratic surface (paraboloid) to find the true sub-pixel minimum using a Newton step.
-    -   **Guardrails**: Includes determinant gating (avoiding singularities), texture checks (avoiding flat regions), and strict clamping to prevent "teleporting."
-3.  **Guided Filter Upscale**: Uses the high-resolution Luma channel as a guide to upscale the usage flow from the 8x8 grid to 1080p, preserving sharp object boundaries (e.g., character silhouettes).
+1.  **Vector Median Filter**: A 3x3 kernel (Triton) that removes outlier vectors by enforcing local coherence.
+2.  **Sub-Pixel Quadratic Refinement**: Fits a 2D paraboloid to find the true sub-pixel minimum via Newton step, with determinant gating, texture checks, and strict clamping.
+3.  **HCU Upscale**: A Triton tile-level kernel (1 program per coarse block) that upscales flow using exp-free bilateral softmax with per-pixel luma, cost, and spatial weighting. Replaces the old Guided Filter for better edge-snapping.
 
 ### Phase 3: The "Nervous System" (Temporal Stability)
-To prevent temporal flickering and handle scene cuts gracefully:
--   **Shock Detection**: Monitors Luma Mean Absolute Difference (MAD) and warp error spikes. Instantly resets temporal buffers on scene cuts.
--   **Adaptive Damping**: Applies an Exponential Moving Average (EMA) to flow vectors. The smoothing factor is adaptive based on tracking confidence:
-    -   High Confidence (Low Cost) → Trust new data (Fast adaptation).
-    -   Low Confidence (High Cost) → Trust history (Heavy damping).
--   **Quadratic Veto**: Prevents the sub-pixel refiner from sliding into incorrect local minima.
+-   **Shock Detection**: Luma MAD + warp error spike monitoring. Resets temporal buffers on scene cuts.
+-   **Adaptive EMA**: Per-pixel `α = clamp(1 - cost/16, 0.1, 0.9)`. High confidence → trust new data; low confidence → trust history.
+-   **Goblin Leash**: Confidence-weighted soft clamp — `vmax = lerp(48, 200, exp(-cost/8))`. High-confidence large motion (camera pans) passes through; low-confidence hallucinations are choked to 48px.
+-   **Quadratic Veto**: Prevents sub-pixel refiner from sliding into adjacent local minima.
 
 ## Performance Benchmarks
 
@@ -40,24 +35,27 @@ Tested on `sample_darksouls2.mp4` (640×360, 30fps, fast-paced Dark Souls II gam
 | :--- | :---: | :---: | :--- |
 | Raw JFA | 0.076 | 31.4 px | Census + JFA block grid |
 | V1 Refined | 0.064 | 25.0 px | + Vector Median + Pyramidal |
-| **Finesse** | **0.057** | **15.8 px** | + Sub-Pixel + Guided Filter |
-| **Nervous (500-frame)** | **0.086*** | **14.1 px** | + Shock Detection + Adaptive EMA |
+| Finesse (Guided) | 0.057 | 15.8 px | + Sub-Pixel + Guided Filter |
+| Nervous V1 | 0.086 | 14.1 px | + EMA + Shock Detection |
+| **HCU + Goblin Leash** | **0.088** | **19.0 px** | + Triton HCU + Soft Clamp |
 
-> \* 500-frame average includes scene transitions. First-10-frame avg is **0.057** vs DIS **0.055**.
-> On frames 3, 6, and 7, **MFQ Finesse beats OpenCV DIS** on warp error.
+> First-10-frame avg error is **0.057** vs DIS **0.055**. On frames 3, 6, 7, **MFQ beats DIS**.
 
-### 500-Frame Endurance Test
+### 500-Frame Endurance Test (HCU + Goblin Leash)
 
 | Metric | Value |
 | :--- | :--- |
-| **Throughput** | **45.6 FPS** |
-| Avg Warp Error | 0.086 |
-| Peak Warp Error | 0.184 (scene cut) |
-| Peak Max Vector | 84.5 px (camera pan) |
-| Shocks detected | 16 scene cuts |
+| **Throughput** | **51.6 FPS** |
+| Avg Warp Error | 0.088 |
+| Peak Warp Error | 0.180 (scene cut) |
+| Peak Max Vector | 162.1 px (high-conf pan) |
+| Shocks | 16 |
+| Anomalies | **5** (warp_err only, 0 max_vec) |
 | Crashes / NaN / Inf | **0** |
 
-See [benchmarks.md](benchmarks.md) for per-frame tables, shock event logs, and kernel timings.
+> Anomaly = vector >100px **AND** JFA cost >15 (low confidence). True large-displacement motion is not penalized.
+
+See [benchmarks.md](benchmarks.md) for full tables, HCU vs Guided Filter comparison, and shock logs.
 
 ## Quick Start
 

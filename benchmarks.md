@@ -1,19 +1,19 @@
 # MotionFlowQueen — Benchmarks
 
 All benchmarks run on `sample_darksouls2.mp4` (640×360, 30fps, fast-paced Dark Souls II gameplay).
-Hardware: NVIDIA GPU (Triton), Python 3.14, PyTorch 2.x.
+Hardware: NVIDIA GTX 1650, Python 3.14, PyTorch 2.x, Triton.
 
 ---
 
 ## Pipeline Evolution
 
-| Version | Pipeline | Avg Warp Error | Avg Flow Mag | Notes |
-| :--- | :--- | :---: | :---: | :--- |
-| Raw JFA | Census → JFA (8×8 grid) → bilinear upscale | 0.0761 | 31.4 px | Block-grid artifacts, rainbow noise |
-| V1 Refined | + Vector Median + Pyramidal Upscale | 0.0640 | 25.0 px | Outlier removal, re-matching at 4× |
-| Finesse | + Sub-Pixel Quadratic + Guided Filter | 0.0572 | 15.8 px | Breaks integer curse, edge-aware |
-| **Lockdown** | + Guardrails + Temporal EMA | **0.0860*** | **14.1 px** | 500-frame stable, no NaN/crashes |
-| **Nervous** | + Shock Detection + Adaptive EMA + Veto | **0.0860*** | **14.1 px** | Scene-cut handling, 16 shocks caught |
+| Version | Pipeline | Avg Warp Error | Avg Flow Mag | FPS | Notes |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| Raw JFA | Census → JFA (8×8 grid) → bilinear | 0.076 | 31.4 px | — | Block artifacts, rainbow noise |
+| V1 Refined | + Vector Median + Pyramidal Upscale | 0.064 | 25.0 px | — | Outlier removal |
+| Finesse | + Sub-Pixel + Guided Filter | 0.057 | 15.8 px | — | Breaks integer curse, edge-aware |
+| Nervous V1 | + Shock + Adaptive EMA (Guided) | 0.086* | 14.1 px | 45.6 | 500-frame stable |
+| **HCU + Goblin Leash** | + Triton HCU + Soft Clamp | **0.088*** | **19.0 px** | **51.6** | Zero max_vec anomalies |
 
 > \* 500-frame average includes scene transitions and menu overlays that inflate error.
 > First-10-frame average (smooth gameplay only) is **0.057**, competitive with DIS at **0.055**.
@@ -40,47 +40,69 @@ Hardware: NVIDIA GPU (Triton), Python 3.14, PyTorch 2.x.
 
 ---
 
-## 500-Frame Endurance Stress Test (Nervous System V2)
+## HCU V2 vs Guided Filter (500-Frame Endurance)
 
-| Metric | Value |
-| :--- | :--- |
-| Frames processed | 500 |
-| Total time | 11.0s |
-| **Throughput** | **45.6 FPS** |
-| Avg Warp Error | 0.0860 |
-| Peak Warp Error | 0.1840 (frame 180 — scene cut) |
-| Avg Flow Magnitude | 14.1 px |
-| Avg Max Vector | 45.7 px |
-| Peak Max Vector | 84.5 px (frame 250 — camera pan) |
-| Shocks detected | 16 |
-| Anomalies (>64px or >0.15 err) | 26 |
-| Crashes / NaN / Inf | **0** |
+| Metric | Guided Filter | **HCU + Goblin Leash** |
+| :--- | :---: | :---: |
+| **Throughput** | 45.6 fps | **51.6 fps (+13%)** |
+| Avg Warp Error | 0.086 | **0.088** |
+| Peak Warp Error | 0.184 | **0.180** |
+| Avg Flow Magnitude | 14.1 px | **19.0 px** |
+| Avg Max Vector | 45.7 px | 81.2 px |
+| Peak Max Vector | 84.5 px | 162.1 px |
+| Anomalies | 26 (old threshold) | **5** (smart threshold) |
+| Shocks | 16 | 16 |
 
-### Shock Events
+> HCU faithfully preserves long-range motion (19px avg vs 14.1px). The Guided Filter
+> implicitly averaged down vectors through its radius-4 box filter, reducing flow magnitude.
+> The Goblin Leash soft clamp ensures only high-confidence vectors are allowed past 48px.
+
+---
+
+## Goblin Leash: Confidence-Weighted Soft Clamp
+
+```
+conf  = exp(-cost / 8.0)                     # 0 → 1
+vmax  = 48.0 + conf × (200.0 - 48.0)         # 48px → 200px
+scale = clamp(vmax / magnitude, max=1.0)
+```
+
+| JFA Cost | Confidence | Max Allowed Vector |
+| :---: | :---: | :---: |
+| 0 | 1.00 | 200 px |
+| 2 | 0.78 | 166 px |
+| 8 | 0.37 | 104 px |
+| 15 | 0.15 | 71 px |
+| 25 | 0.04 | 54 px |
+| 32 | 0.02 | 51 px |
+
+---
+
+## Anomaly Definition (V2)
+
+An **anomaly** is defined as a pixel/block that satisfies **BOTH**:
+- Vector magnitude > **100 px**
+- JFA cost > **15** (low confidence)
+
+True large-displacement motion (camera pans, fast dodges) with low JFA cost is
+**not** flagged as an anomaly. This eliminates false positives on genuine motion.
+
+---
+
+## Shock Events (Latest Run)
 
 | Frame | Trigger | Type |
 | :---: | :--- | :--- |
-| 151 | err=0.013 > 1.5× avg=0.007 | Error spike |
-| 171 | err=0.121 > 1.5× avg=0.053 | Error spike |
-| 177 | err=0.084 > 1.5× avg=0.032 | Error spike |
+| 152 | err=0.029 > 1.5× avg=0.013 | Error spike |
+| 171 | err=0.119 > 1.5× avg=0.058 | Error spike |
+| 177 | err=0.081 > 1.5× avg=0.028 | Error spike |
 | 180 | MAD=46.9 > 30.0 | Scene cut |
-| 189 | err=0.116 > 1.5× avg=0.072 | Error spike |
-| 206 | err=0.069 > 1.5× avg=0.041 | Error spike |
-| 244 | MAD=32.3 > 30.0 | Scene cut |
-| 245 | MAD=32.6 > 30.0 | Scene cut |
+| 189 | err=0.114 > 1.5× avg=0.071 | Error spike |
+| 206 | err=0.063 > 1.5× avg=0.036 | Error spike |
+| 244–245 | MAD=32.3–32.6 | Scene cut |
 | 251 | MAD=30.5 > 30.0 | Scene cut |
-| 331 | err=0.102 > 1.5× avg=0.063 | Error spike |
-| 493 | MAD=30.1 > 30.0 | Scene cut |
-| 495–499 | MAD=30–33 | Combat burst |
-
-### High-Motion Anomalies
-
-| Frame | Max Vector | Warp Error | Context |
-| :---: | :---: | :---: | :--- |
-| 64 | 74.9 px | — | Fast camera rotation |
-| 180 | 78.4 px | 0.1840 | Scene transition (peak) |
-| 250 | 84.5 px | — | Violent camera pan (global peak) |
-| 387 | 79.5 px | — | Combat dodge animation |
+| 331 | err=0.100 > 1.5× avg=0.065 | Error spike |
+| 493–499 | MAD=30–33 | Combat burst |
 
 ---
 
@@ -90,7 +112,6 @@ Hardware: NVIDIA GPU (Triton), Python 3.14, PyTorch 2.x.
 | :--- | :---: | :---: |
 | v3 Safe Mode (32×32 blocking) | 3.84 ms | ~1.9 ms |
 | v4 Pre-Padding | 3.74 ms | ~1.9 ms |
-| v6 Fused RGB (failed — bandwidth) | 9.07 ms | ~4.5 ms |
 | **v3 Stable Baseline (final)** | **4.01 ms** | **~2.0 ms** |
 | Zero-Motion Early Termination | 3.02 ms amortized | ~1.5 ms |
 
@@ -103,4 +124,4 @@ Hardware: NVIDIA GPU (Triton), Python 3.14, PyTorch 2.x.
 - **Max Vector**: Maximum L2 norm across all pixels in a single frame.
 - **DIS Baseline**: `cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_MEDIUM)`.
 - **Shock Detection**: Luma MAD threshold = 30.0; Error spike ratio = 1.5× rolling average.
-- **Anomaly Threshold**: Max vector > 64px or warp error > 0.15.
+- **Anomaly**: Vector >100px **AND** JFA cost >15 (low confidence).

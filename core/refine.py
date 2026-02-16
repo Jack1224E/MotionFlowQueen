@@ -1,14 +1,14 @@
 """
-Refinement Pipeline V3: Median → Sub-Pixel → Guided Upscale + Temporal Damping
+Refinement Pipeline V4: Median → Sub-Pixel → HCU Upscale + Temporal Damping
 Post-processes raw JFA block-grid flow into smooth full-res flow.
-Includes temporal EMA to suppress frame-to-frame flicker.
+Includes adaptive temporal EMA to suppress frame-to-frame flicker.
 """
 import torch
 import torch.nn.functional as F
 from kernels.refine_kernel import run_vector_median
 from kernels.subpixel_kernel import run_subpixel_refine
 from kernels.census_kernel import run_census
-from core.upscale import guided_upsample
+from core.upscale import hcu_upsample
 
 
 # Persistent state for temporal damping
@@ -118,12 +118,20 @@ def refine_flow(dx_grid, dy_grid, conf_grid, img1, img2, block_size=8, temporal=
     dx_px = dx_sub * block_size
     dy_px = dy_sub * block_size
 
-    # --- Step 4: Guided Filter Upscale ---
-    confidence = torch.exp(-cost_int.float() / 4.0)
-    guide_hr = luma1
+    # --- Step 4: HCU Upscale (exp-free bilateral softmax) ---
+    dx_full, dy_full = hcu_upsample(dx_px, dy_px, cost_int, luma1, block_size=block_size)
 
-    dx_full = guided_upsample(dx_px, guide_hr, confidence_lr=confidence, radius=4, eps=0.01)
-    dy_full = guided_upsample(dy_px, guide_hr, confidence_lr=confidence, radius=4, eps=0.01)
+    # --- Step 4a: Confidence-Weighted Soft Clamp ("Goblin Leash") ---
+    # High confidence (low cost) → allow up to 200px.  Low confidence → choke to 48px.
+    cost_full = F.interpolate(
+        cost_int.unsqueeze(1).float(), (H, W), mode='nearest'
+    ).squeeze(1)
+    conf = torch.exp(-cost_full / 8.0)                  # 0 → 1
+    vmax = 48.0 + conf * (200.0 - 48.0)                 # 48 → 200 px
+    mag = torch.sqrt(dx_full ** 2 + dy_full ** 2).clamp(min=1e-6)
+    scale = torch.clamp(vmax / mag, max=1.0)
+    dx_full = dx_full * scale
+    dy_full = dy_full * scale
     torch.cuda.synchronize()
 
     # --- Step 5: Temporal Damping ---
