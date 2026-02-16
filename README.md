@@ -32,14 +32,32 @@ To prevent temporal flickering and handle scene cuts gracefully:
 
 ## Performance Benchmarks
 
-Tested on `sample_darksouls2.mp4` (Fast-paced Gaming Footage):
+Tested on `sample_darksouls2.mp4` (640×360, 30fps, fast-paced Dark Souls II gameplay).
+
+### Pipeline Progression
+
+| Version | Avg Warp Error | Avg Flow Mag | Key Change |
+| :--- | :---: | :---: | :--- |
+| Raw JFA | 0.076 | 31.4 px | Census + JFA block grid |
+| V1 Refined | 0.064 | 25.0 px | + Vector Median + Pyramidal |
+| **Finesse** | **0.057** | **15.8 px** | + Sub-Pixel + Guided Filter |
+| **Nervous (500-frame)** | **0.086*** | **14.1 px** | + Shock Detection + Adaptive EMA |
+
+> \* 500-frame average includes scene transitions. First-10-frame avg is **0.057** vs DIS **0.055**.
+> On frames 3, 6, and 7, **MFQ Finesse beats OpenCV DIS** on warp error.
+
+### 500-Frame Endurance Test
 
 | Metric | Value |
 | :--- | :--- |
-| **Throughput** | **45.6 FPS** (Endurance Mode) |
-| **Avg Warp Error** | **0.086** (Competitive with DIS) |
-| **Flow Magnitude** | **14.1 px** (Stable, no runaway vectors) |
-| **Stability** | **0 Crashes** over 500-frame stress test |
+| **Throughput** | **45.6 FPS** |
+| Avg Warp Error | 0.086 |
+| Peak Warp Error | 0.184 (scene cut) |
+| Peak Max Vector | 84.5 px (camera pan) |
+| Shocks detected | 16 scene cuts |
+| Crashes / NaN / Inf | **0** |
+
+See [benchmarks.md](benchmarks.md) for per-frame tables, shock event logs, and kernel timings.
 
 ## Quick Start
 
