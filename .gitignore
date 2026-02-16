@@ -8,3 +8,6 @@ validation_output/
 *.jpg
 .DS_Store
 .directory
+improvements.md
+gpt_*_improvements.md
+kimi_*_improvements.md
