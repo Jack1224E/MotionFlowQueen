@@ -1,0 +1,16 @@
+{
+    "source_directories": [
+        "."
+    ],
+    "search_path": [
+        "/home/jack/Documents/FG2/venv/lib/python3.14/site-packages",
+        "/home/jack/Documents/FG2/repo_rife",
+        "/home/jack/Documents/FG2/repo_ifrnet",
+        "/home/jack/Documents/FG2/repo_rife/model",
+        "/home/jack/Documents/FG2/repo_ifrnet/models"
+    ],
+    "exclude": [
+        "venv",
+        "__pycache__"
+    ]
+}

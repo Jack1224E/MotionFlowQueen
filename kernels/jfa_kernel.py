@@ -110,6 +110,14 @@ def jfa_init_kernel(
         best_dy = tl.where(better, cand_dy, best_dy)
         best_cost = tl.where(better, cand_cost, best_cost)
 
+    # ── Zero-Motion Bias ──────────────────────────────────────
+    # If the winning vector is (0,0) with cost < 5, this block is
+    # confidently static.  Lock it by setting cost = 0 so the JFA
+    # propagation kernel skips it entirely (needs_work = cost > 0).
+    # This kills the "boiling water" micro-jitter on flat textures.
+    is_zero = (best_dx == 0) & (best_dy == 0) & (best_cost < 5)
+    best_cost = tl.where(is_zero, 0, best_cost)
+
     packed = pack_state(best_dx, best_dy, best_cost)
     out_ptrs = flow_out_ptr + pid_b * stride_f_b + offs_y[:, None] * stride_f_h + offs_x[None, :] * stride_f_w
     tl.store(out_ptrs, packed, mask=mask)

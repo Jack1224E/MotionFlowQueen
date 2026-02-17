@@ -34,12 +34,12 @@ Tested on `sample_darksouls2.mp4` (640×360, 30fps, fast-paced Dark Souls II gam
 | Version | Avg Warp Error | Avg Flow Mag | Key Change |
 | :--- | :---: | :---: | :--- |
 | Raw JFA | 0.076 | 31.4 px | Census + JFA block grid |
-| V1 Refined | 0.064 | 25.0 px | + Vector Median + Pyramidal |
+| V1 Refined | 0.064 | 25.0 px | + Vector Medoian + Pyramidal |
 | Finesse (Guided) | 0.057 | 15.8 px | + Sub-Pixel + Guided Filter |
 | Nervous V1 | 0.086 | 14.1 px | + EMA + Shock Detection |
 | **HCU + Goblin Leash** | **0.088** | **19.0 px** | + Triton HCU + Soft Clamp |
 
-> First-10-frame avg error is **0.057** vs DIS **0.055**. On frames 3, 6, 7, **MFQ beats DIS**.
+> First-10-frame avg error is **0.057** vs DIS **0.055**. On frames 3, 6, 7, **MFQ beats DIS**.o
 
 ### 500-Frame Endurance Test (HCU + Goblin Leash)
 

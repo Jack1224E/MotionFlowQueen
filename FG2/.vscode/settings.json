@@ -1,0 +1,39 @@
+{
+    "python.defaultInterpreterPath": "/home/jack/Documents/FG2/venv/bin/python",
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.analysis.extraPaths": [
+        "/home/jack/Documents/FG2/repo_rife",
+        "/home/jack/Documents/FG2/repo_ifrnet",
+        "/home/jack/Documents/FG2/repo_rife/model",
+        "/home/jack/Documents/FG2/repo_ifrnet/models"
+    ],
+    "python.autoComplete.extraPaths": [
+        "/home/jack/Documents/FG2/repo_rife",
+        "/home/jack/Documents/FG2/repo_ifrnet",
+        "/home/jack/Documents/FG2/repo_rife/model",
+        "/home/jack/Documents/FG2/repo_ifrnet/models"
+    ],
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/*/**": true,
+        "**/venv/**": true,
+        "**/repo_rife/train_log/*.pkl": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/bower_components": true,
+        "**/*.code-search": true,
+        "**/venv": true,
+        "**/__pycache__": true
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/__pycache__": true
+    }
+}
